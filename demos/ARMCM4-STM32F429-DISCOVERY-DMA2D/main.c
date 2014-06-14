@@ -20,9 +20,6 @@
 
 #include "chprintf.h"
 #include "shell.h"
-#if HAL_USE_SERIAL_USB
-#include "usbcfg.h"
-#endif
 
 #include "stmdrivers/stm32f429i_discovery_sdram.h"
 #include "stmdrivers/stm32f4xx_fmc.h"
@@ -31,7 +28,7 @@
 #include "stm32_ltdc.h"
 #include "stm32_dma2d.h"
 
-#include "res/wolf3d_vgagraph_chunk87.h"
+const unsigned char wolf3d_vgagraph_chunk87[64000] = {0};
 
 #define IS42S16400J_SIZE             0x400000
 
@@ -312,7 +309,7 @@ static const dma2d_laycfg_t dma2d_frame_laycfg = {
   0xFF,
   NULL
 };
-
+#if 0
 static void dma2d_test(void) {
 
   DMA2DDriver *const dma2dp = &DMA2DD1;
@@ -348,7 +345,47 @@ static void dma2d_test(void) {
 
   dma2dReleaseBus(dma2dp);
 }
+#endif
+static void dma2d_test1(void) {
 
+  DMA2DDriver *const dma2dp = &DMA2DD1;
+  LTDCDriver *const ltdcp = &LTDCD1;
+
+  chThdSleepSeconds(1);
+
+  ltdcBgSetConfig(ltdcp, &ltdc_screen_laycfg1);
+  ltdcReload(ltdcp, TRUE);
+
+  dma2dAcquireBus(dma2dp);
+
+  /* Target the frame buffer by default.*/
+  dma2dBgSetConfig(dma2dp, &dma2d_frame_laycfg);
+  dma2dFgSetConfig(dma2dp, &dma2d_frame_laycfg);
+  dma2dOutSetConfig(dma2dp, &dma2d_frame_laycfg);
+
+  /* Copy the background.*/
+  dma2dFgSetConfig(dma2dp, &dma2d_bg_laycfg);
+  dma2dJobSetMode(dma2dp, DMA2D_JOB_CONVERT);
+  dma2dJobSetSize(dma2dp, 240, 320);
+  dma2dJobExecute(dma2dp);
+}
+
+static void dma2d_test2(void) {
+  /* Draw the splashscren picture at (8, 0).*/
+  DMA2DDriver *const dma2dp = &DMA2DD1;
+  LTDCDriver *const ltdcp = &LTDCD1;
+
+  dma2dFgSetConfig(dma2dp, &dma2d_fg_laycfg);
+  dma2dOutSetAddress(dma2dp, dma2dComputeAddress(
+    frame_buffer, ltdc_screen_frmcfg1.pitch, DMA2D_FMT_RGB888, 8, 0
+  ));
+  dma2dOutSetWrapOffset(dma2dp, ltdc_screen_frmcfg1.width - 200);
+  dma2dJobSetMode(dma2dp, DMA2D_JOB_CONVERT);
+  dma2dJobSetSize(dma2dp, 200, 320);
+  dma2dJobExecute(dma2dp);
+
+  dma2dReleaseBus(dma2dp);
+}
 /*===========================================================================*/
 /* Command line related.                                                     */
 /*===========================================================================*/
@@ -673,17 +710,9 @@ static const ShellCommand commands[] = {
 };
 
 static const ShellConfig shell_cfg1 = {
-#if HAL_USE_SERIAL_USB
-  (BaseSequentialStream *)&SDU1,
-#else
   (BaseSequentialStream *)&SD1,
-#endif
   commands
 };
-
-/*===========================================================================*/
-/* Initialization and main thread.                                           */
-/*===========================================================================*/
 
 /*
  * Application entry point.
@@ -706,28 +735,10 @@ int main(void) {
    */
   shellInit();
 
-#if HAL_USE_SERIAL_USB
-  /*
-   * Initializes a serial-over-USB CDC driver.
-   */
-  sduObjectInit(&SDU1);
-  sduStart(&SDU1, &serusbcfg);
-
-  /*
-   * Activates the USB driver and then the USB bus pull-up on D+.
-   * Note, a delay is inserted in order to not have to disconnect the cable
-   * after a reset.
-   */
-  usbDisconnectBus(serusbcfg.usbp);
-  chThdSleepMilliseconds(1000);
-  usbStart(serusbcfg.usbp, &usbcfg);
-  usbConnectBus(serusbcfg.usbp);
-#else
   /*
    * Initializes serial port.
    */
   sdStart(&SD1, NULL);
-#endif /* HAL_USE_SERIAL_USB */
 
   /*
    * Initialise SDRAM, board.h has already configured GPIO correctly (except that ST example uses 50MHz not 100MHz?)
@@ -747,7 +758,8 @@ int main(void) {
    * Activates the DMA2D-related drivers.
    */
   dma2dStart(&DMA2DD1, &dma2d_cfg);
-  dma2d_test();
+//  dma2d_test();
+	dma2d_test1();
 
   /*
    * Creating the blinker threads.
@@ -763,14 +775,7 @@ int main(void) {
    */
   while (TRUE) {
     if (!shelltp) {
-#if HAL_USE_SERIAL_USB
-      if (SDU1.config->usbp->state == USB_ACTIVE) {
-        /* Spawns a new shell.*/
-        shelltp = shellCreate(&shell_cfg1, SHELL_WA_SIZE, NORMALPRIO);
-      }
-#else
       shelltp = shellCreate(&shell_cfg1, SHELL_WA_SIZE, NORMALPRIO);
-#endif
     }
     else {
       /* If the previous shell exited.*/
@@ -780,6 +785,8 @@ int main(void) {
         shelltp = NULL;
       }
     }
-    chThdSleepMilliseconds(500);
+	memset(&wolf3d_vgagraph_chunk87, 0xF, sizeof(wolf3d_vgagraph_chunk87));
+	dma2d_test2();
+	chThdSleepMilliseconds(2000);
   }
 }
