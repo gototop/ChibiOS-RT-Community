@@ -89,7 +89,7 @@ CSRC = $(PORTSRC) \
        stmdrivers/stm32f429i_discovery_sdram.c stmdrivers/stm32f4xx_fmc.c \
        main.c \
        wolf3d_palette.c \
-       res/wolf3d_vgagraph_chunk87.c \
+       #res/wolf3d_vgagraph_chunk87.c \
        # EOL
 
 # C++ sources that can be compiled in ARM or THUMB mode depending on the global
